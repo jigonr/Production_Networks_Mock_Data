@@ -2,9 +2,15 @@
 using Random; 
 using Distributions; 
 using Statistics; 
-using SplitApplyCombine; 
+using SparseArrays; 
 
-include("stats.jl")
+# obtain parameters using the method of moments
+function mom_lognormal(xbar::Float64, s²::Float64)
+    μ = log(xbar / sqrt(s²/ xbar^2 + 1)); 
+    σ = sqrt(log(s²/ xbar^2 + 1)); 
+
+    return μ, σ
+end; 
 
 # set seed
 seed = 2023; 
@@ -34,10 +40,10 @@ dₛₐₗₑₛ = LogNormal(μₛₐₗₑₛ, σₛₐₗₑₛ);
 dₛᵤₚ = LogNormal(μₛᵤₚ, σₛᵤₚ); # three parameter: location 1 by adding 1 after sampling, conditional on buying
 
 # set number of firms
-Nᶠ = Int64(16_384); 
-Nₒᵇ = Int64(0.25 * Nᶠ); 
-Nₒˢ = Int64(0.10 * Nᶠ); 
-Nˢᵇ = Int64(0.65 * Nᶠ); 
+Nᶠ = Int64(32_000); 
+Nₒᵇ = floor(Int64, 0.25 * Nᶠ); 
+Nₒˢ = floor(Int64, 0.10 * Nᶠ); 
+Nˢᵇ = ceil(Int64, 0.65 * Nᶠ); 
 
 # draw sales for only sellers and simultaneous buyers and sellers
 ## we assume the market share is equal to the intermediate input market share
@@ -52,13 +58,24 @@ sort!(sᵢ);
 sᵢ .= sᵢ / sum(sᵢ); 
 
 # add only buyers
-bⱼ = floor.(rand(dₛᵤₚ, Nᶠ)) .+ 1; 
+bⱼ = floor.(Int64, rand(dₛᵤₚ, Nᶠ)) .+ 1; 
 sample = trues(Nₒᵇ); 
 append!(sample, rand(Nₒˢ + Nˢᵇ) .>= Nₒˢ/ (Nₒˢ + Nˢᵇ)); 
 bⱼ .*= sample; 
+bⱼ = Array{Int64}(transpose(bⱼ)); 
 
 # extensive margin
-pᵢⱼ = 1 .- (1 .- sᵢ) .^ bⱼ'; 
+pᵢⱼ = 1 .- (1 .- sᵢ) .^ bⱼ; 
 
 # intensive margin
-xᵢⱼ = reshape(combinedims(rand.(Binomial.(bⱼ', sᵢ), 1)), (Nᶠ, Nᶠ)); 
+# create main array
+xᵢⱼ = zeros(Int64, Nᶠ, Nᶠ); 
+
+# draw number of transactions between firms
+for i in eachindex(sᵢ)
+    for j in eachindex(bⱼ)
+        @inbounds xᵢⱼ[i, j] = rand(Binomial(bⱼ[j], sᵢ[i]), 1)[1]
+    end
+end; 
+
+# 
