@@ -1,8 +1,9 @@
 # packages
-using Random; 
+using CSV; 
+using DataFrames; 
 using Distributions; 
+using Random; 
 using Statistics; 
-using SparseArrays; 
 
 # obtain parameters using the method of moments
 function mom_lognormal(xbar::Float64, s²::Float64)
@@ -41,9 +42,9 @@ dₛᵤₚ = LogNormal(μₛᵤₚ, σₛᵤₚ); # three parameter: location 1 
 
 # set number of firms
 Nᶠ = Int64(32_000); 
-Nₒᵇ = floor(Int64, 0.25 * Nᶠ); 
-Nₒˢ = floor(Int64, 0.10 * Nᶠ); 
-Nˢᵇ = ceil(Int64, 0.65 * Nᶠ); 
+Nₒᵇ = floor(Int64, 0.31 * Nᶠ); 
+Nₒˢ = floor(Int64, 0.13 * Nᶠ); 
+Nˢᵇ = ceil(Int64, 0.56 * Nᶠ); 
 
 # draw sales for only sellers and simultaneous buyers and sellers
 ## we assume the market share is equal to the intermediate input market share
@@ -65,17 +66,34 @@ bⱼ .*= sample;
 bⱼ = Array{Int64}(transpose(bⱼ)); 
 
 # extensive margin
-pᵢⱼ = 1 .- (1 .- sᵢ) .^ bⱼ; 
+# preallocate space
+pᵢⱼ = zeros(Float64, Nᶠ, Nᶠ); 
+
+# compute probabilities of linkages
+pᵢⱼ .= 1 .- (1 .- sᵢ) .^ bⱼ; 
 
 # intensive margin
-# create main array
-xᵢⱼ = zeros(Int64, Nᶠ, Nᶠ); 
-
 # draw number of transactions between firms
-for i in eachindex(sᵢ)
-    for j in eachindex(bⱼ)
-        @inbounds xᵢⱼ[i, j] = rand(Binomial(bⱼ[j], sᵢ[i]), 1)[1]
+@inline function intensive_margin(sᵢ, bⱼ)
+    xᵢⱼ = zeros(Int64, length(sᵢ), length(bⱼ)); 
+    @views @inbounds for i ∈ eachindex(sᵢ), j ∈ eachindex(bⱼ)
+        xᵢⱼ[i, j] = rand(Binomial(bⱼ[j], sᵢ[i]), 1)[1]
     end
+    return xᵢⱼ
 end; 
 
-# 
+xᵢⱼ = intensive_margin(sᵢ, bⱼ); 
+
+# create df to save treansactions
+# compute cartesian product with ID combinations
+transactions = DataFrame(Iterators.product(1:length(sᵢ), 1:length(bⱼ))); 
+rename!(transactions, [:seller, :buyer]); 
+
+# add transactions to df
+transactions.trans = vec(xᵢⱼ); 
+
+# drop zero value transactions
+filter!(row -> row.trans > 0, transactions); 
+
+# save df
+CSV.write("C:/Users/jigon/OneDrive/Escritorio/mock.csv", transactions); 
